@@ -78,15 +78,30 @@ def avgPrice(data, startTime, days):
         time = time - datetime.timedelta(hours=1)
     return (total / totalDatas)
 
+def writeAvgPrice(data):
+    # Get Indeces from data
+    timelist = list(data.index.values)
+
+    # Convert all times from numpy to datetimes
+    for n in range(len(timelist)):
+        timelist[n] = pandas.to_datetime(timelist[n])
+    
+    
 
 def main():
     data = getHistData()
+    writeAvgPrice(data)
     # print(queryPrice(data, datetime.datetime(2021, 11, 7, 1)))
-    f = open("test.txt", "a+")
-    for index, row in data.iterrows():
-        f.write(str(index) + ":\n\tPrice: " + str(row["Price"]) + "\n\tPrice Avg (1 Day): " + str(avgPrice(data, index, 1)) + "\n\tPrice Avg (14 Day): " + str(avgPrice(
-            data, index, 14)) + "\n\tPrice Avg (30 Day): " + str(avgPrice(data, index, 30)) + "\n\tPrice Avg(180 Day): " + str(avgPrice(data, index, 180)) + "\n\tVolume: " + str(row["Vol"]) + "\n")
-        print("Progress: " + str(index), end='\r')
+    # f = open("test.txt", "a+")
+    # for index, row in data.iterrows():
+    #     test = (str(index) + ":\n\t")
+    #     test = ("Price: " + str(row["Price"]) + "\n\t")
+    #     test = ("Price Avg (1 Day): " + str(avgPrice(data, index, 1)) + "\n\t")
+    #     test = ("Price Avg (14 Day): " + str(avgPrice(data, index, 14)) + "\n\t")
+    #     test = ("Price Avg (30 Day): " + str(avgPrice(data, index, 30)) + "\n\t")
+    #     test = ("Price Avg(180 Day): " + str(avgPrice(data, index, 180)) + "\n\t")
+    #     test = ("Volume: " + str(row["Vol"]) + "\n")
+    #     # print("Progress: " + str(index), end='\r')
     pass
 
 
