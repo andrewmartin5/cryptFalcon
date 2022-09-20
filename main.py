@@ -85,8 +85,43 @@ def writeAvgPrice(data):
     # Convert all times from numpy to datetimes
     for n in range(len(timelist)):
         timelist[n] = pandas.to_datetime(timelist[n])
-    
-    
+
+    tracked1Day = []
+    avg1Day = []
+    tracked14Day = []
+    avg14Day = []
+    tracked30Day = []
+    avg30Day = []
+    tracked180Day = []
+    avg180Day = []
+    for time in timelist:
+        print(str(time), end = '\r')
+        if len(tracked1Day) > 24:
+            tracked1Day.pop(0)
+        if len(tracked14Day) > 336:
+            tracked14Day.pop(0)
+        if len(tracked30Day) > 720:
+            tracked30Day.pop(0)
+        if len(tracked180Day) > 4320:
+            tracked180Day.pop(0)
+        tracked1Day.append(queryPrice(data, time))
+        avg1Day.append(sum(tracked1Day) / len(tracked1Day))
+        tracked14Day.append(queryPrice(data, time))
+        avg14Day.append(sum(tracked14Day) / len(tracked14Day))
+        tracked30Day.append(queryPrice(data, time))
+        avg30Day.append(sum(tracked30Day) / len(tracked30Day))
+        tracked180Day.append(queryPrice(data, time))
+        avg180Day.append(sum(tracked180Day) / len(tracked180Day))
+
+    newData = data
+    newData['1DayAvg'] = avg1Day
+    newData['14DayAvg'] = avg14Day
+    newData['30DayAvg'] = avg30Day
+    newData['180DayAvg'] = avg180Day
+
+    newData.to_csv(symbol + "_AVGS.csv", index=None, header=True)
+    return newData
+
 
 def main():
     data = getHistData()
