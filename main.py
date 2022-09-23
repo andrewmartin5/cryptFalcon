@@ -1,9 +1,9 @@
-import time
+from sqlite3 import Time
 import os
-import json
 import datetime
 import pandas
 from binance.client import Client
+import schedule
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
@@ -12,13 +12,13 @@ url = "https://testnet.binance.vision/api"
 api_key = os.environ.get("binance_api")
 api_secret = os.environ.get("binance_secret")
 
-
+# TODO update to do klines
 def scrapeRecent():
     client = Client(api_key, api_secret)
     client.API_URL = url
     price = client.get_symbol_ticker(symbol=symbol)
-    print(float(price["price"]))
     del client
+    return price["price"]
 
 
 def scrapeHist():
@@ -28,30 +28,60 @@ def scrapeHist():
     client = Client(api_key, api_secret)
     client.KLINE_INTERVAL_1HOUR
 
+    print("Scraping Hist at increment: " + interval)
     # Get Data
     hist = client.get_historical_klines(symbol, interval, "1 Jan, 2015")
 
+    print("Processing Data...", end="\r")
     # Process Data
     dates = []
     inf = []
     for list in hist:
-        dates.append(datetime.datetime.fromtimestamp(list[0]/1000.0))
-        inf.append([datetime.datetime.fromtimestamp(
-            list[0]/1000.0), list[1], list[5]])
+        dates.append(datetime.datetime.fromtimestamp(list[0] / 1000.0))
+        inf.append(
+            [datetime.datetime.fromtimestamp(list[0] / 1000.0), list[1], list[5]]
+        )
+    print("Data Processed       ")
+    print("Creating CSV", end="\r")
 
     # Manage data and create CSV
-    data = pandas.DataFrame(inf, index=dates, columns=["Time", "Price", "Vol"])
-    data.to_csv(symbol + ".csv", index=None, header=True)
+    raw = pandas.DataFrame(inf, index=dates, columns=["Time", "Price", "Vol"])
+    raw.to_csv(symbol + ".csv", index=None, header=True)
+
+    raw = getRawHist()
+
+    avg = writeAvgPrice(raw)
     del client
+    return avg
 
 
 def dateparse(datelist):
     return [datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in datelist]
 
 
-def getHistData():
-    df = pandas.read_csv(symbol + ".csv", parse_dates=True, date_parser=dateparse,
-                         index_col="Time", names=["Time", "Price", "Vol"], header=0)
+def getRawHist():
+    df = pandas.read_csv(
+        symbol + ".csv",
+        parse_dates=True,
+        date_parser=dateparse,
+        index_col="Time",
+        names=["Time", "Price", "Vol"],
+        header=0,
+    )
+    index = df.index
+    df = df[~index.duplicated(keep="first")]
+    return df
+
+
+def getAvgHist():
+    df = pandas.read_csv(
+        symbol + "_AVG.csv",
+        parse_dates=True,
+        date_parser=dateparse,
+        index_col="Time",
+        names=["Time", "Price", "Vol", "1DayAvg", "14DayAvg", "30DayAvg", "180DayAvg"],
+        header=0,
+    )
     index = df.index
     df = df[~index.duplicated(keep="first")]
     return df
@@ -76,16 +106,19 @@ def avgPrice(data, startTime, days):
         except:
             pass
         time = time - datetime.timedelta(hours=1)
-    return (total / totalDatas)
+    return total / totalDatas
+
 
 def writeAvgPrice(data):
     # Get Indeces from data
     timelist = list(data.index.values)
 
+    print("Capturing data and reformatting dates")
     # Convert all times from numpy to datetimes
     for n in range(len(timelist)):
         timelist[n] = pandas.to_datetime(timelist[n])
 
+    print("Calculating Avgs")
     tracked1Day = []
     avg1Day = []
     tracked14Day = []
@@ -95,7 +128,7 @@ def writeAvgPrice(data):
     tracked180Day = []
     avg180Day = []
     for time in timelist:
-        print(str(time), end = '\r')
+        print(str(time), end="\r")
         if len(tracked1Day) > 24:
             tracked1Day.pop(0)
         if len(tracked14Day) > 336:
@@ -114,31 +147,29 @@ def writeAvgPrice(data):
         avg180Day.append(sum(tracked180Day) / len(tracked180Day))
 
     newData = data
-    newData['1DayAvg'] = avg1Day
-    newData['14DayAvg'] = avg14Day
-    newData['30DayAvg'] = avg30Day
-    newData['180DayAvg'] = avg180Day
+    newData["1DayAvg"] = avg1Day
+    newData["14DayAvg"] = avg14Day
+    newData["30DayAvg"] = avg30Day
+    newData["180DayAvg"] = avg180Day
 
-    newData.to_csv(symbol + "_AVGS.csv", index=None, header=True)
+    print("Data Averaged      ")
+
+    newData.to_csv(symbol + "_AVG.csv", index=Time, header=True)
     return newData
 
 
+def update():
+    print(str(pandas.Timestamp.now().round('60min').to_pydatetime()) + " " + scrapeRecent())
+
 def main():
-    data = getHistData()
-    writeAvgPrice(data)
-    # print(queryPrice(data, datetime.datetime(2021, 11, 7, 1)))
-    # f = open("test.txt", "a+")
-    # for index, row in data.iterrows():
-    #     test = (str(index) + ":\n\t")
-    #     test = ("Price: " + str(row["Price"]) + "\n\t")
-    #     test = ("Price Avg (1 Day): " + str(avgPrice(data, index, 1)) + "\n\t")
-    #     test = ("Price Avg (14 Day): " + str(avgPrice(data, index, 14)) + "\n\t")
-    #     test = ("Price Avg (30 Day): " + str(avgPrice(data, index, 30)) + "\n\t")
-    #     test = ("Price Avg(180 Day): " + str(avgPrice(data, index, 180)) + "\n\t")
-    #     test = ("Volume: " + str(row["Vol"]) + "\n")
-    #     # print("Progress: " + str(index), end='\r')
-    pass
+    data = getAvgHist()
+    # TODO change to hour.at(:"01   ")
+    schedule.every().minute.at(":00").do(update)
+    print("Started at " + str(datetime.datetime.now()))
+    while True:
+        schedule.run_pending()
 
 
 if __name__ == "__main__":
+
     main()
