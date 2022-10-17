@@ -1,3 +1,4 @@
+from lib2to3.pgen2.token import STAR
 from sqlite3 import Time
 import os
 import datetime
@@ -7,10 +8,11 @@ import schedule
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
-symbol = "ETHUSDT"
+symbol = "ETHUSDT" # "ETHUSDT"
 url = "https://testnet.binance.vision/api"
 api_key = os.environ.get("binance_api")
 api_secret = os.environ.get("binance_secret")
+STARTING_CASH = 100
 
 # TODO update to do klines
 def scrapeRecent():
@@ -161,15 +163,57 @@ def writeAvgPrice(data):
 def update():
     print(str(pandas.Timestamp.now().round('60min').to_pydatetime()) + " " + scrapeRecent())
 
-def main():
-    data = getAvgHist()
+def mainloop():
     # TODO change to hour.at(:"01   ")
     schedule.every().minute.at(":00").do(update)
     print("Started at " + str(datetime.datetime.now()))
     while True:
         schedule.run_pending()
 
+def runLinear(data):
+    timelist = list(data.index.values)
+    print("Capturing data and reformatting dates")
+
+    # Convert all times from numpy to datetimes
+    for n in range(len(timelist)):
+        timelist[n] = pandas.to_datetime(timelist[n])
+    
+    avgEarnings = (STARTING_CASH / queryPrice(data, timelist[0])) * queryPrice(data, timelist[len(timelist) - 1])
+    print(f"Final balance to beat: {avgEarnings}")
+
+    profitsFrame = pandas.DataFrame(index=range(100, 200, 5), columns=range(5, 100, 5))
+
+    for buySens in range(100, 150):
+        for sellSens in range(0, 50):
+            print("Buy Sensitivity: " + str(buySens))
+            print("Sell Sensitivity: "+ str(sellSens))
+            balanceUSD = STARTING_CASH / 2
+            cryptBalance = balanceUSD / queryPrice(data, timelist[0])
+            lastpurchase = queryPrice(data, timelist[0])
+            for time in timelist:
+                price = queryPrice(data, time)
+                if price > (lastpurchase * (buySens/100)) and balanceUSD > 1:
+                    diff = balanceUSD * .25
+                    balanceUSD -= diff
+                    cryptBalance += diff / price
+                    lastpurchase = price
+                    print(balanceUSD + (cryptBalance * price), end="\r")
+                elif price < (lastpurchase * (sellSens / 100)):
+                    diff = cryptBalance * .25
+                    cryptBalance -= diff
+                    balanceUSD += diff * price
+                    lastpurchase = price
+                    print(balanceUSD + (cryptBalance * price), end="\r")
+            print(balanceUSD + (cryptBalance * price))
+            profitsFrame.at[buySens, sellSens] = (balanceUSD + (cryptBalance * price))
+                # f.write(str(time) + ", " + str(balanceUSD + (cryptBalance * price)) + ", " + str(price) + "\n")
+    profitsFrame.to_csv(symbol + "test.csv", header=True)
+
+def main():
+    # data = scrapeHist()
+    data = getAvgHist()
+    runLinear(data)
+    
 
 if __name__ == "__main__":
-
     main()
