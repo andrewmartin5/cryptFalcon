@@ -1,10 +1,11 @@
-from lib2to3.pgen2.token import STAR
-from sqlite3 import Time
+from itertools import product
 import os
 import datetime
 import pandas
 from binance.client import Client
 import schedule
+from time import sleep
+import multiprocessing
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
@@ -13,6 +14,9 @@ url = "https://testnet.binance.vision/api"
 api_key = os.environ.get("binance_api")
 api_secret = os.environ.get("binance_secret")
 STARTING_CASH = 100
+
+data = pandas.DataFrame()
+prices = []
 
 # TODO update to do klines
 def scrapeRecent():
@@ -181,33 +185,49 @@ def runLinear(data):
     avgEarnings = (STARTING_CASH / queryPrice(data, timelist[0])) * queryPrice(data, timelist[len(timelist) - 1])
     print(f"Final balance to beat: {avgEarnings}")
 
-    profitsFrame = pandas.DataFrame(index=range(100, 200, 5), columns=range(5, 100, 5))
+    buySenses = range(1500, 2000)
+    sellSenses = range(750, 1000)
+    args = product(buySenses, sellSenses, )
+    global prices
+    prices = list(data["Price"])
+    newArgs = []
+    for a in args:
+        b = list(a)
+        b.append(prices)
+        newArgs.append(b)
 
-    for buySens in range(100, 150):
-        for sellSens in range(0, 50):
-            print("Buy Sensitivity: " + str(buySens))
-            print("Sell Sensitivity: "+ str(sellSens))
-            balanceUSD = STARTING_CASH / 2
-            cryptBalance = balanceUSD / queryPrice(data, timelist[0])
-            lastpurchase = queryPrice(data, timelist[0])
-            for time in timelist:
-                price = queryPrice(data, time)
-                if price > (lastpurchase * (buySens/100)) and balanceUSD > 1:
-                    diff = balanceUSD * .25
-                    balanceUSD -= diff
-                    cryptBalance += diff / price
-                    lastpurchase = price
-                    print(balanceUSD + (cryptBalance * price), end="\r")
-                elif price < (lastpurchase * (sellSens / 100)):
-                    diff = cryptBalance * .25
-                    cryptBalance -= diff
-                    balanceUSD += diff * price
-                    lastpurchase = price
-                    print(balanceUSD + (cryptBalance * price), end="\r")
-            print(balanceUSD + (cryptBalance * price))
-            profitsFrame.at[buySens, sellSens] = (balanceUSD + (cryptBalance * price))
-                # f.write(str(time) + ", " + str(balanceUSD + (cryptBalance * price)) + ", " + str(price) + "\n")
+    pool = multiprocessing.Pool()
+    profits = pool.map(findProfits, newArgs)
+
+    profitsFrame = pandas.DataFrame(list(splitData(profits, len(sellSenses))), index=buySenses, columns=sellSenses)
+
+    sleep(1)
     profitsFrame.to_csv(symbol + "test.csv", header=True)
+
+def splitData(list, iterations):
+    for i in range(0, len(list), iterations):
+        yield list[i:i + iterations]
+
+
+def findProfits(params):
+    buySens = params[0]
+    sellSens = params[1]
+    prices = params[2]
+    balanceUSD = STARTING_CASH / 2
+    cryptBalance = balanceUSD / prices[0]
+    lastpurchase = prices[0]
+    for price in prices:
+        if price > (lastpurchase * (buySens/1000)) and balanceUSD > 1:
+            diff = balanceUSD * .25
+            balanceUSD -= diff
+            cryptBalance += diff / price
+            lastpurchase = price
+        elif price < (lastpurchase * (sellSens / 1000)):
+            diff = cryptBalance * .25
+            cryptBalance -= diff
+            balanceUSD += diff * price
+            lastpurchase = price
+    return (balanceUSD + (cryptBalance * price))
 
 def main():
     # data = scrapeHist()
