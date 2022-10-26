@@ -1,3 +1,4 @@
+from audioop import avg
 from itertools import product
 import os
 import datetime
@@ -181,27 +182,34 @@ def runLinear(data):
     # Convert all times from numpy to datetimes
     for n in range(len(timelist)):
         timelist[n] = pandas.to_datetime(timelist[n])
-    
-    avgEarnings = (STARTING_CASH / queryPrice(data, timelist[0])) * queryPrice(data, timelist[len(timelist) - 1])
-    print(f"Final balance to beat: {avgEarnings}")
 
-    buySenses = range(1500, 2000)
-    sellSenses = range(750, 1000)
-    args = product(buySenses, sellSenses, )
     global prices
     prices = list(data["Price"])
+    avgEarnings = findProfits([100, 0, 100, 0, prices])
+    print(f"Final balance to beat: {avgEarnings}")
+
+    granularity = 1
+    buySenses = range(100, 200, granularity)
+    sellSenses = range(0, 100, granularity)
+    buyAggs = range(0, 100, granularity)
+    sellAggs = range(0, 100, granularity)
+    args = product(buySenses, sellSenses, buyAggs, sellAggs)
     newArgs = []
     for a in args:
         b = list(a)
         b.append(prices)
         newArgs.append(b)
 
+    # print("|" + ("_" * 100) + "|", end = "\r")
     pool = multiprocessing.Pool()
     profits = pool.map(findProfits, newArgs)
+    # print("|" + ("█" * 100) + "|")
+    total = len(buyAggs) * len(sellAggs)
+    avgdProfits = []
+    for i in range(0, len(profits), total):
+        avgdProfits.append(sum(profits[i:i+total]) / total)
 
-    profitsFrame = pandas.DataFrame(list(splitData(profits, len(sellSenses))), index=buySenses, columns=sellSenses)
-
-    sleep(1)
+    profitsFrame = pandas.DataFrame(list(splitData(avgdProfits, len(sellSenses))), index=buySenses, columns=sellSenses)
     profitsFrame.to_csv(symbol + "test.csv", header=True)
 
 def splitData(list, iterations):
@@ -212,22 +220,29 @@ def splitData(list, iterations):
 def findProfits(params):
     buySens = params[0]
     sellSens = params[1]
-    prices = params[2]
+    buyAgg = params[2]
+    sellAgg = params[3]
+    prices = params[4]
     balanceUSD = STARTING_CASH / 2
     cryptBalance = balanceUSD / prices[0]
     lastpurchase = prices[0]
+    total = 0
     for price in prices:
-        if price > (lastpurchase * (buySens/1000)) and balanceUSD > 1:
-            diff = balanceUSD * .25
+        if price > (lastpurchase * (buySens/100)) and balanceUSD > 1:
+            diff = balanceUSD * (buyAgg / 100)
             balanceUSD -= diff
             cryptBalance += diff / price
             lastpurchase = price
-        elif price < (lastpurchase * (sellSens / 1000)):
-            diff = cryptBalance * .25
+        elif price < (lastpurchase * (sellSens / 100)):
+            diff = cryptBalance * (sellAgg / 100)
             cryptBalance -= diff
-            balanceUSD += diff * price
+            balanceUSD += (diff * price) * .999 #To account for 0.1% Fee
             lastpurchase = price
-    return (balanceUSD + (cryptBalance * price))
+        total += balanceUSD + (cryptBalance * price)
+    # completion = "█" * int(buySens - 100)
+    # print ("|" + completion, end="\r")
+    total = total / len(prices)
+    return total
 
 def main():
     # data = scrapeHist()
