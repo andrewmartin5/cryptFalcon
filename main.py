@@ -1,4 +1,3 @@
-from audioop import avg
 from itertools import product
 import os
 import datetime
@@ -7,10 +6,12 @@ from binance.client import Client
 import schedule
 from time import sleep
 import multiprocessing
+import tqdm
+from emailSelf import emailSelf
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
-symbol = "ETHUSDT" # "ETHUSDT"
+symbol = "BTCUSDT" # "ETHUSDT"
 url = "https://testnet.binance.vision/api"
 api_key = os.environ.get("binance_api")
 api_secret = os.environ.get("binance_secret")
@@ -187,12 +188,11 @@ def runLinear(data):
     prices = list(data["Price"])
     avgEarnings = findProfits([100, 0, 100, 0, prices])
     print(f"Final balance to beat: {avgEarnings}")
-
     granularity = 1
-    buySenses = range(100, 200, granularity)
-    sellSenses = range(0, 100, granularity)
-    buyAggs = range(0, 100, granularity)
-    sellAggs = range(0, 100, granularity)
+    buyAggs = range(20, 30, granularity)
+    sellAggs = range(20, 30, granularity)
+    buySenses = range(100, 200, 10)
+    sellSenses = range(0, 100, 10)
     args = product(buySenses, sellSenses, buyAggs, sellAggs)
     newArgs = []
     for a in args:
@@ -200,10 +200,8 @@ def runLinear(data):
         b.append(prices)
         newArgs.append(b)
 
-    # print("|" + ("_" * 100) + "|", end = "\r")
-    pool = multiprocessing.Pool()
+    pool = multiprocessing.Pool(12)
     profits = pool.map(findProfits, newArgs)
-    # print("|" + ("█" * 100) + "|")
     total = len(buyAggs) * len(sellAggs)
     avgdProfits = []
     for i in range(0, len(profits), total):
@@ -229,18 +227,16 @@ def findProfits(params):
     total = 0
     for price in prices:
         if price > (lastpurchase * (buySens/100)) and balanceUSD > 1:
-            diff = balanceUSD * (buyAgg / 100)
+            diff = balanceUSD * (buyAgg / 1000)
             balanceUSD -= diff
             cryptBalance += diff / price
             lastpurchase = price
         elif price < (lastpurchase * (sellSens / 100)):
-            diff = cryptBalance * (sellAgg / 100)
+            diff = cryptBalance * (sellAgg / 1000)
             cryptBalance -= diff
             balanceUSD += (diff * price) * .999 #To account for 0.1% Fee
             lastpurchase = price
         total += balanceUSD + (cryptBalance * price)
-    # completion = "█" * int(buySens - 100)
-    # print ("|" + completion, end="\r")
     total = total / len(prices)
     return total
 
@@ -248,6 +244,7 @@ def main():
     # data = scrapeHist()
     data = getAvgHist()
     runLinear(data)
+    emailSelf()
     
 
 if __name__ == "__main__":
