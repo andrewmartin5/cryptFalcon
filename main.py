@@ -29,7 +29,6 @@ def scrapeRecent():
     del client
     return price["price"]
 
-
 def scrapeHist():
     interval = "1h"
 
@@ -98,21 +97,13 @@ def getAvgHist():
 def query(data, time, value):
     return data.loc[time][value]
 
-def queryPrice(data, time):
-    return data.loc[time]["Price"]
-
-
-def queryVol(data, time):
-    return data.loc[time]["Vol"]
-
-
 def avgPrice(data, startTime, days):
     time = startTime
     total = 0
     totalDatas = 0
     for n in range(days * 24):
         try:
-            total += queryPrice(data, time)
+            total += query(data, time, "Price")
             totalDatas += 1
         except:
             pass
@@ -148,13 +139,13 @@ def writeAvgPrice(data):
             tracked30Day.pop(0)
         if len(tracked180Day) > 4320:
             tracked180Day.pop(0)
-        tracked1Day.append(queryPrice(data, time))
+        tracked1Day.append(query(data, time, "Price"))
         avg1Day.append(sum(tracked1Day) / len(tracked1Day))
-        tracked14Day.append(queryPrice(data, time))
+        tracked14Day.append(query(data, time, "Price"))
         avg14Day.append(sum(tracked14Day) / len(tracked14Day))
-        tracked30Day.append(queryPrice(data, time))
+        tracked30Day.append(query(data, time, "Price"))
         avg30Day.append(sum(tracked30Day) / len(tracked30Day))
-        tracked180Day.append(queryPrice(data, time))
+        tracked180Day.append(query(data, time, "Price"))
         avg180Day.append(sum(tracked180Day) / len(tracked180Day))
 
     newData = data
@@ -182,96 +173,35 @@ def mainloop():
 def findIntersections(data):
     timelist = list(data.index.values)
     timelist = [pandas.to_datetime(n) for n in timelist]
+    # Set starting values
     balanceUSD = 100
     cryptBalance = 0
+
+    avgEarnings = (STARTING_CASH / query(data, timelist[0], "Price")) * query(data, timelist[len(timelist) - 1], "Price")
+    print(f"Final price to beat: {avgEarnings}")
+
     for time in timelist:
-        price = queryPrice(data, time)
-        isGreater = query(data, time, "180DayAvg") < price
-        if isGreater and cryptBalance != 0:
+        price = query(data, time, "Price")
+        # The price is increasing if the current price is higher than the average
+        priceIncreasing = query(data, time, "180DayAvg") < query(data, time, "1DayAvg")
+        if priceIncreasing:
+            # If the average price is greater than the current price, buy
             diff = balanceUSD
             balanceUSD -= diff
             cryptBalance += diff / price
             lastpurchase = price
-        elif not isGreater and balanceUSD == 0:
+        elif not priceIncreasing:
+            # If price is decreasing
             diff = cryptBalance
             cryptBalance -= diff
             balanceUSD += (diff * price) * .999 #To account for 0.1% Fee
             lastpurchase = price
-    print(cryptBalance)
-    print(balanceUSD)
-
-# def runLinear(data):
-#     timelist = list(data.index.values)
-#     print("Capturing data and reformatting dates")
-
-#     # Convert all times from numpy to datetimes
-#     for n in range(len(timelist)):
-#         timelist[n] = pandas.to_datetime(timelist[n])
-
-#     global prices
-#     prices = list(data["Price"])
-#     avgEarnings = findProfits([100, 0, 0, 0, prices])
-#     print(f"Final balance to beat: {avgEarnings}")
-#     granularity = 1
-#     buyAggs = range(35, 45, granularity)
-#     sellAggs = range(30, 40, granularity)
-#     # buyAggs = [25]
-#     # sellAggs = [35]
-#     buySenses = range(100, 125, 1)
-#     sellSenses = range(75, 100, 1)
-#     # buySenses = [105]
-#     # sellSenses = [90]
-#     args = product(buyAggs, sellAggs, buySenses, sellSenses)
-#     newArgs = []
-#     for a in args:
-#         b = list(a)
-#         b.append(prices)
-#         newArgs.append(b)
-
-#     pool = multiprocessing.Pool()
-#     profits = tqdm.tqdm(pool.imap(findProfits, newArgs), total = len(newArgs))
-#     total = len(buySenses) * len(sellSenses)
-#     profits = list(profits)
-#     avgdProfits = []
-#     for i in range(0, len(profits), total):
-#         avgdProfits.append(statistics.median(profits[i:i+total]))
-
-#     profitsFrame = pandas.DataFrame(list(splitData(avgdProfits, len(sellAggs))), index=buyAggs, columns=sellAggs)
-#     profitsFrame.to_csv(symbol + "test.csv", header=True)
-
-# def splitData(list, iterations):
-#     for i in range(0, len(list), iterations):
-#         yield list[i:i + iterations]
-
-
-# def findProfits(params):
-#     buySens = params[2]
-#     sellSens = params[3]
-#     buyAgg = params[0]
-#     sellAgg = params[1]
-#     prices = params[4]
-#     balanceUSD = STARTING_CASH / 2
-#     cryptBalance = balanceUSD / prices[0]
-#     lastpurchase = prices[0]
-#     profits = []
-#     for price in prices:
-#         if price > (lastpurchase * (buySens/100)) and balanceUSD > 1:
-#             diff = balanceUSD * (buyAgg / 1000)
-#             balanceUSD -= diff
-#             cryptBalance += diff / price
-#             lastpurchase = price
-#         elif price < (lastpurchase * (sellSens / 100)):
-#             diff = cryptBalance * (sellAgg / 1000)
-#             cryptBalance -= diff
-#             balanceUSD += (diff * price) * .999 #To account for 0.1% Fee
-#             lastpurchase = price
-#     return balanceUSD + (cryptBalance * price)
-#     return statistics.mean(profits)
+    print(balanceUSD + (price * cryptBalance))
 
 def main():
     # data = scrapeHist()
-    # data = writeAvgPrice(getRawHist())
     data = getAvgHist()
+    
     findIntersections(data)
     # runLinear(data)
     # emailSelf()
