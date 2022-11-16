@@ -12,7 +12,7 @@ import tqdm
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
-symbol = "BTCUSDT" # "ETHUSDT"
+symbol = "ETHUSDT" # "BTCUSDT"
 url = "https://testnet.binance.vision/api"
 api_key = os.environ.get("binance_api")
 api_secret = os.environ.get("binance_secret")
@@ -130,6 +130,7 @@ def writeAvgPrice(data):
     avg30Day = []
     tracked180Day = []
     avg180Day = []
+    prediction = []
     for time in tqdm.tqdm(timelist):
         if len(tracked1Day) > 24:
             tracked1Day.pop(0)
@@ -147,12 +148,14 @@ def writeAvgPrice(data):
         avg30Day.append(sum(tracked30Day) / len(tracked30Day))
         tracked180Day.append(query(data, time, "Price"))
         avg180Day.append(sum(tracked180Day) / len(tracked180Day))
+        prediction = avg30Day[len(avg30Day) - 1] - avg14Day[len(avg14Day) - 1]
 
     newData = data
     newData["1DayAvg"] = avg1Day
     newData["14DayAvg"] = avg14Day
     newData["30DayAvg"] = avg30Day
     newData["180DayAvg"] = avg180Day
+    # newData["Prediction"] = prediction
 
     print("Data Averaged      ")
 
@@ -174,17 +177,21 @@ def findIntersections(data):
     timelist = list(data.index.values)
     timelist = [pandas.to_datetime(n) for n in timelist]
     # Set starting values
-    balanceUSD = 100
+    balanceUSD = query(data, timelist[0], "Price")
     cryptBalance = 0
 
     avgEarnings = (STARTING_CASH / query(data, timelist[0], "Price")) * query(data, timelist[len(timelist) - 1], "Price")
     print(f"Final price to beat: {avgEarnings}")
 
+    df = pandas.DataFrame(index=timelist, columns=["Price", "Earnings", "Cash"])
+
     for time in timelist:
         price = query(data, time, "Price")
         # The price is increasing if the current price is higher than the average
-        priceIncreasing = query(data, time, "180DayAvg") < query(data, time, "1DayAvg")
-        if priceIncreasing:
+        # priceIncreasing = query(data, time, "30DayAvg") < query(data, time, "1DayAvg")
+        priceIncreasing = query(data, time, "30DayAvg") < query(data, time, "14DayAvg")
+        prediction = query(data, time, "1DayAvg") > query(data, time, "30DayAvg")
+        if priceIncreasing and prediction:
             # If the average price is greater than the current price, buy
             diff = balanceUSD
             balanceUSD -= diff
@@ -196,11 +203,16 @@ def findIntersections(data):
             cryptBalance -= diff
             balanceUSD += (diff * price) * .999 #To account for 0.1% Fee
             lastpurchase = price
+        df["Price"][time] = price
+        df["Earnings"][time] = balanceUSD + (price * cryptBalance)
+        df["Cash"][time] = balanceUSD
+    df.to_csv(symbol + "_EarningsTime.csv", index=timelist, header=True)
     print(balanceUSD + (price * cryptBalance))
 
 def main():
     # data = scrapeHist()
     data = getAvgHist()
+    # writeAvgPrice(data)
     
     findIntersections(data)
     # runLinear(data)
