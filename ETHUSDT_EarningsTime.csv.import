@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bjqerwecxasi6"
+
+[deps]
+
+files=["res://cryptFalcon/ETHUSDT_EarningsTime.Price.translation", "res://cryptFalcon/ETHUSDT_EarningsTime.Earnings.translation", "res://cryptFalcon/ETHUSDT_EarningsTime.Cash.translation"]
+
+source_file="res://cryptFalcon/ETHUSDT_EarningsTime.csv"
+dest_files=["res://cryptFalcon/ETHUSDT_EarningsTime.Price.translation", "res://cryptFalcon/ETHUSDT_EarningsTime.Earnings.translation", "res://cryptFalcon/ETHUSDT_EarningsTime.Cash.translation"]
+
+[params]
+
+compress=true
+delimiter=0

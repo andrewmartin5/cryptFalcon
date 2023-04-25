@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://doyeh4mbcthyh"
+
+[deps]
+
+files=["res://cryptFalcon/ETHUSDT_AVG.Price.translation", "res://cryptFalcon/ETHUSDT_AVG.Vol.translation", "res://cryptFalcon/ETHUSDT_AVG.1DayAvg.translation", "res://cryptFalcon/ETHUSDT_AVG.14DayAvg.translation", "res://cryptFalcon/ETHUSDT_AVG.30DayAvg.translation", "res://cryptFalcon/ETHUSDT_AVG.180DayAvg.translation"]
+
+source_file="res://cryptFalcon/ETHUSDT_AVG.csv"
+dest_files=["res://cryptFalcon/ETHUSDT_AVG.Price.translation", "res://cryptFalcon/ETHUSDT_AVG.Vol.translation", "res://cryptFalcon/ETHUSDT_AVG.1DayAvg.translation", "res://cryptFalcon/ETHUSDT_AVG.14DayAvg.translation", "res://cryptFalcon/ETHUSDT_AVG.30DayAvg.translation", "res://cryptFalcon/ETHUSDT_AVG.180DayAvg.translation"]
+
+[params]
+
+compress=true
+delimiter=0
