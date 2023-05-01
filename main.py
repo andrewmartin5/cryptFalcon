@@ -14,6 +14,7 @@ import tqdm
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
 symbol = "ETHUSDT"  # "BTCUSDT"
+shortSymbol = "ETH"
 url = "https://www.binance.us/api"
 api_key = os.environ.get('BINANCE_API')
 api_secret = os.environ.get('BINANCE_SECRET')
@@ -31,7 +32,7 @@ tracked180Day = []
 
 
 def scrapeRecent():
-    client = Client(api_key, api_secret)
+    client = Client(api_key, api_secret, tld='us')
     client.API_URL = url
     price = client.get_symbol_ticker(symbol=symbol)
     del client
@@ -42,7 +43,7 @@ def scrapeHist():
     interval = "1h"
 
     # Create Client
-    client = Client(api_key, api_secret)
+    client = Client(api_key, api_secret, tld='us')
     client.KLINE_INTERVAL_1HOUR
 
     print("Scraping Hist at increment: " + interval)
@@ -262,7 +263,7 @@ def findIntersections(data):
 
 
 def getBalance(sym):
-    client = Client(api_key, api_secret)
+    client = Client(api_key, api_secret, tld='us')
     client.API_URL = url
     price = client.get_asset_balance(asset=sym)
     del client
@@ -270,26 +271,31 @@ def getBalance(sym):
 
 
 def buy():
-    q = round((getBalance("USD")/scrapeRecent()) * .9, 5)
-    client = Client(api_key, api_secret)
+    q = round((getBalance("USDT")/scrapeRecent()) * .9, 4)
+    client = Client(api_key, api_secret, tld='us')
     client.API_URL = url
-    client.create_order(symbol="ETHUSDT",
-                        side=SIDE_BUY,
-                        type=ORDER_TYPE_MARKET,
-                        quantity=q)
+    client.order_market_buy(symbol=symbol,
+                            quantity=q)
+
+
+def sell():
+    client = Client(api_key, api_secret, tld='us')
+    client.order_market_sell(symbol=symbol, quantity=getBalance(shortSymbol))
 
 
 def main():
+    # print(scrapeRecent())
     # data = scrapeHist()
-    # raw = getRawHist()
-    # avg = writeAvgPrice(raw)
+    raw = getRawHist()
+    # avg = writeAvgPrice(data)
     # mainloop
     # update()
-    buy()
+    # sell()
     # data = getAvgHist()
     # writeAvgPrice(data)
     # runLinear(data)
     # emailSelf()
+    findIntersections(raw)
 
 
 if __name__ == "__main__":
