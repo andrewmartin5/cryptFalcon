@@ -10,6 +10,9 @@ import multiprocessing
 import statistics
 from emailSelf import emailSelf
 import tqdm
+import tkinter as tk
+from tkinter import ttk
+
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
@@ -18,7 +21,7 @@ shortSymbol = "ETH"
 url = "https://www.binance.us/api"
 api_key = os.environ.get('BINANCE_API')
 api_secret = os.environ.get('BINANCE_SECRET')
-STARTING_CASH = 100
+STARTING_CASH = 50
 
 data = pandas.DataFrame()
 prices = []
@@ -48,7 +51,7 @@ def scrapeHist():
 
     print("Scraping Hist at increment: " + interval)
     # Get Data
-    hist = client.get_historical_klines(symbol, interval, "1 Jan, 2015")
+    hist = client.get_historical_klines(symbol, interval, "5 Jul, 2022")
 
     print("Processing Data...", end="\r")
     # Process Data
@@ -67,7 +70,7 @@ def scrapeHist():
     raw = pandas.DataFrame(inf, index=dates, columns=["Time", "Price", "Vol"])
     raw.to_csv(symbol + ".csv", index=None, header=True)
 
-    raw = getRawHist()
+    raw = readRawHist()
     del client
     return raw
 
@@ -76,7 +79,7 @@ def dateparse(datelist):
     return [datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in datelist]
 
 
-def getRawHist():
+def readRawHist():
     df = pandas.read_csv(
         symbol + ".csv",
         parse_dates=True,
@@ -90,7 +93,7 @@ def getRawHist():
     return df
 
 
-def getAvgHist():
+def readAvgHist():
     df = pandas.read_csv(
         symbol + "_AVG.csv",
         parse_dates=True,
@@ -224,10 +227,11 @@ def mainloop():
 
 
 def findIntersections(data):
+    # data = data.tail(-4326)
     timelist = list(data.index.values)
     timelist = [pandas.to_datetime(n) for n in timelist]
     # Set starting values
-    balanceUSD = query(data, timelist[0], "Price")
+    balanceUSD = STARTING_CASH
     cryptBalance = 0
 
     avgEarnings = (STARTING_CASH / query(data, timelist[0], "Price")) * query(
@@ -283,19 +287,64 @@ def sell():
     client.order_market_sell(symbol=symbol, quantity=getBalance(shortSymbol))
 
 
+class App(tk.Tk):
+    def __init__(self, *args, **kwargs):
+        tk.Tk.__init__(self, *args, **kwargs)
+        self.title("CryptFalcon")
+        self.minsize(1280, 720)
+
+        for x in range(2):
+            self.columnconfigure(x, weight=1, uniform="")
+        for y in range(3):
+            self.rowconfigure(y, weight=1, uniform="")
+
+        self.titleFrame = tk.Frame(self)
+        self.titleFrame.columnconfigure(0, weight=1, uniform="")
+        self.titleFrame.rowconfigure(0, weight=0, uniform="")
+        self.titleFrame.rowconfigure(1, weight=0, uniform="")
+        self.titleLabel = tk.Label(self.titleFrame, text="CryptFalcon")
+        self.titleLabel.grid(row=0, column=0, sticky=tk.NSEW)
+        self.clockLabel = tk.Label(self.titleFrame, text="00:00:00")
+        self.clockLabel.grid(row=1, column=0, sticky=tk.NSEW)
+        self.titleFrame.grid(row=0, column=0, sticky=tk.NSEW)
+
+        self.queryFrame = ttk.LabelFrame(self, text="Query Price")
+        for x in range(2):
+            self.queryFrame.columnconfigure(x, weight=1, uniform="")
+        for y in range(4):
+            self.queryFrame.rowconfigure(y, weight=1, uniform="")
+        tk.Label(self.queryFrame, text="Test").grid(row=0, column=0)
+        self.symbolLabel = tk.Entry(self.queryFrame)
+        self.symbolLabel.grid(row=0, column=1, sticky=tk.EW)
+        self.queryButton = tk.Button(self.queryFrame, text="Search!")
+        self.queryButton.grid(row=1, column=0, columnspan=2, sticky=tk.EW)
+        self.priceAnswer = tk.Label(
+            self.queryFrame, text="The price for ____ is ____")
+        self.balanceAnswer = tk.Label(
+            self.queryFrame, text="Your current balance (USDT) is ____")
+        self.valueAnswer = tk.Label(
+            self.queryFrame, text="You can afford ____ _____")
+        self.priceAnswer.grid(row=2, column=0, columnspan=2, sticky=tk.EW)
+        self.balanceAnswer.grid(row=3, column=0, columnspan=2, sticky=tk.EW)
+        self.valueAnswer.grid(row=4, column=0, columnspan=2, sticky=tk.EW)
+        self.queryFrame.grid(row=1, column=0, sticky=tk.NSEW)
+
+        self.transactFrame = ttk.LabelFrame(self, text="Make a Transaction")
+        self.transactFrame.grid(row=2, column=0, sticky=tk.NSEW)
+
+
 def main():
-    # print(scrapeRecent())
-    # data = scrapeHist()
-    raw = getRawHist()
-    # avg = writeAvgPrice(data)
+    app = App()
+
+    # print(scrapeRec/ent())
+    # raw = scrapeHist()
+    # raw = readRawHist()
+    # writeAvgPrice(raw)
     # mainloop
     # update()
     # sell()
-    # data = getAvgHist()
-    # writeAvgPrice(data)
-    # runLinear(data)
+    app.mainloop()
     # emailSelf()
-    findIntersections(raw)
 
 
 if __name__ == "__main__":
