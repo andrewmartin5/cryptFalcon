@@ -12,6 +12,12 @@ from emailSelf import emailSelf
 import tqdm
 import tkinter as tk
 from tkinter import ttk
+from tkinter import font
+from time import strftime
+import threading
+import os
+from tkinter import messagebox as msg
+import customtkinter as ctk
 
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
@@ -34,24 +40,24 @@ tracked180Day = []
 # TODO update to do klines
 
 
-def scrapeRecent():
+def scrapeRecent(sym):
     client = Client(api_key, api_secret, tld='us')
     client.API_URL = url
-    price = client.get_symbol_ticker(symbol=symbol)
+    price = client.get_symbol_ticker(symbol=sym)
     del client
     return float(price["price"])
 
 
 def scrapeHist():
-    interval = "1h"
+    interval = "15m"
 
     # Create Client
     client = Client(api_key, api_secret, tld='us')
-    client.KLINE_INTERVAL_1HOUR
+    client.KLINE_INTERVAL_15MINUTE
 
     print("Scraping Hist at increment: " + interval)
     # Get Data
-    hist = client.get_historical_klines(symbol, interval, "5 Jul, 2022")
+    hist = client.get_historical_klines(symbol, interval, "5 Jul, 2015")
 
     print("Processing Data...", end="\r")
     # Process Data
@@ -75,197 +81,6 @@ def scrapeHist():
     return raw
 
 
-def dateparse(datelist):
-    return [datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in datelist]
-
-
-def readRawHist():
-    df = pandas.read_csv(
-        symbol + ".csv",
-        parse_dates=True,
-        date_parser=dateparse,
-        index_col="Time",
-        names=["Time", "Price", "Vol"],
-        header=0,
-    )
-    index = df.index
-    df = df[~index.duplicated(keep="first")]
-    return df
-
-
-def readAvgHist():
-    df = pandas.read_csv(
-        symbol + "_AVG.csv",
-        parse_dates=True,
-        date_parser=dateparse,
-        index_col="Time",
-        names=["Time", "Price", "Vol", "1DayAvg",
-               "14DayAvg", "30DayAvg", "180DayAvg"],
-        header=0,
-    )
-    index = df.index
-    df = df[~index.duplicated(keep="first")]
-    return df
-
-
-def query(data, time, value):
-    return data.loc[time][value]
-
-
-def avgPrice(data, startTime, days):
-    time = startTime
-    total = 0
-    totalDatas = 0
-    for n in range(days * 24):
-        try:
-            total += query(data, time, "Price")
-            totalDatas += 1
-        except:
-            pass
-        time = time - datetime.timedelta(hours=1)
-    return total / totalDatas
-
-
-def writeAvgPrice(data):
-    # Get Indeces from data
-    timelist = list(data.index.values)
-
-    print("Capturing data and reformatting dates")
-    # Convert all times from numpy to datetimes
-    for n in range(len(timelist)):
-        timelist[n] = pandas.to_datetime(timelist[n])
-
-    print("Calculating Avgs")
-    global tracked1Day
-    global tracked14Day
-    global tracked30Day
-    global tracked180Day
-    tracked1Day = []
-    avg1Day = []
-    tracked14Day = []
-    avg14Day = []
-    tracked30Day = []
-    avg30Day = []
-    tracked180Day = []
-    avg180Day = []
-    for time in tqdm.tqdm(timelist):
-        if len(tracked1Day) > 24:
-            tracked1Day.pop(0)
-        if len(tracked14Day) > 336:
-            tracked14Day.pop(0)
-        if len(tracked30Day) > 720:
-            tracked30Day.pop(0)
-        if len(tracked180Day) > 4320:
-            tracked180Day.pop(0)
-        tracked1Day.append(query(data, time, "Price"))
-        avg1Day.append(sum(tracked1Day) / len(tracked1Day))
-        tracked14Day.append(query(data, time, "Price"))
-        avg14Day.append(sum(tracked14Day) / len(tracked14Day))
-        tracked30Day.append(query(data, time, "Price"))
-        avg30Day.append(sum(tracked30Day) / len(tracked30Day))
-        tracked180Day.append(query(data, time, "Price"))
-        avg180Day.append(sum(tracked180Day) / len(tracked180Day))
-
-    newData = data
-    newData["1DayAvg"] = avg1Day
-    newData["14DayAvg"] = avg14Day
-    newData["30DayAvg"] = avg30Day
-    newData["180DayAvg"] = avg180Day
-
-    print("Data Averaged      ")
-
-    newData.to_csv(symbol + "_AVG.csv", index=timelist, header=True)
-    return newData
-
-
-def update():
-    print(str(pandas.Timestamp.now().round('60min').to_pydatetime()))
-    price = scrapeRecent()
-    cryptBalance = getBalance("ETH")
-    balanceUSD = getBalance("USD")
-    global tracked1Day
-    global tracked14Day
-    global tracked30Day
-    global tracked180Day
-    if len(tracked1Day) > 24:
-        tracked1Day.pop(0)
-    if len(tracked14Day) > 336:
-        tracked14Day.pop(0)
-    if len(tracked30Day) > 720:
-        tracked30Day.pop(0)
-    if len(tracked180Day) > 4320:
-        tracked180Day.pop(0)
-    tracked1Day.append(price)
-    tracked14Day.append(price)
-    tracked30Day.append(price)
-    tracked180Day.append(price)
-    avg1Day = sum(tracked1Day) / len(tracked1Day)
-    avg14Day = sum(tracked14Day) / len(tracked14Day)
-    avg30Day = sum(tracked30Day) / len(tracked30Day)
-    avg180Day = sum(tracked180Day) / len(tracked180Day)
-    # The price is increasing if the current price is higher than the average
-    priceIncreasing = avg30Day < avg14Day and avg1Day > avg30Day
-    if priceIncreasing:
-        # If the average price is greater than the current price, buy
-        diff = balanceUSD
-        balanceUSD -= diff
-        cryptBalance += diff / price
-    elif cryptBalance * scrapeRecent() > balanceUSD:
-        # If price is decreasing, sell
-        diff = cryptBalance
-        cryptBalance -= diff
-        balanceUSD += (diff * price) * .999  # To account for 0.1% Fee
-    print(f"Balance: {balanceUSD + (price * cryptBalance)}")
-
-
-def mainloop():
-    # TODO change to hour.at(:"01   ")
-    schedule.every().minute.at(":00").do(update)
-    print("Started at " + str(datetime.datetime.now()))
-    while True:
-        schedule.run_pending()
-
-
-def findIntersections(data):
-    # data = data.tail(-4326)
-    timelist = list(data.index.values)
-    timelist = [pandas.to_datetime(n) for n in timelist]
-    # Set starting values
-    balanceUSD = STARTING_CASH
-    cryptBalance = 0
-
-    avgEarnings = (STARTING_CASH / query(data, timelist[0], "Price")) * query(
-        data, timelist[len(timelist) - 1], "Price")
-    print(f"Final price to beat: {avgEarnings}")
-
-    df = pandas.DataFrame(index=timelist, columns=[
-                          "Price", "Earnings", "Cash"])
-
-    for time in tqdm.tqdm(timelist):
-        price = query(data, time, "Price")
-        # The price is increasing if the current price is higher than the average
-        # priceIncreasing = query(data, time, "30DayAvg") < query(data, time, "1DayAvg")
-        priceIncreasing = query(data, time, "30DayAvg") < query(
-            data, time, "14DayAvg")
-        prediction = query(data, time, "1DayAvg") > query(
-            data, time, "30DayAvg")
-        if priceIncreasing and prediction:
-            # If the average price is greater than the current price, buy
-            diff = balanceUSD
-            balanceUSD -= diff
-            cryptBalance += diff / price
-        elif not priceIncreasing:
-            # If price is decreasing
-            diff = cryptBalance
-            cryptBalance -= diff
-            balanceUSD += (diff * price) * .999  # To account for 0.1% Fee
-        df["Price"][time] = price
-        df["Earnings"][time] = balanceUSD + (price * cryptBalance)
-        df["Cash"][time] = balanceUSD
-    df.to_csv(symbol + "_EarningsTime.csv", index=timelist, header=True)
-    print(balanceUSD + (price * cryptBalance))
-
-
 def getBalance(sym):
     client = Client(api_key, api_secret, tld='us')
     client.API_URL = url
@@ -284,67 +99,314 @@ def buy():
 
 def sell():
     client = Client(api_key, api_secret, tld='us')
-    client.order_market_sell(symbol=symbol, quantity=getBalance(shortSymbol))
+    client.order_market_sell(
+        symbol=symbol, quantity=getBalance(shortSymbol))
 
 
-class App(tk.Tk):
+def readRawHist():
+    df = pandas.read_csv(
+        symbol + ".csv",
+        parse_dates=True,
+        date_format="%Y-%m-%d %H:%M:%S",
+        index_col="Time",
+        names=["Time", "Price", "Vol"],
+        header=0,
+    )
+    index = df.index
+    df = df[~index.duplicated(keep="first")]
+    return df
+
+
+def readAvgHist():
+    df = pandas.read_csv(
+        symbol + "_AVG.csv",
+        parse_dates=True,
+        date_format="%Y-%m-%d %H:%M:%S",
+        index_col="Time",
+        names=["Time", "Price", "Vol", "1DayAvg",
+               "14DayAvg", "30DayAvg", "180DayAvg", "MarketTrend", "Indicator", "Signal", "Center"],
+        header=0,
+    )
+    index = df.index
+    df = df[~index.duplicated(keep="first")]
+    return df
+
+
+def query(data, time, value):
+    return data.loc[time][value]
+
+
+def writeAvgPrice(data):
+    # Get Indeces from data
+    timelist = list(data.index.values)
+
+    print("Capturing data and reformatting dates")
+    # Convert all times from numpy to datetimes
+    for n in range(len(timelist)):
+        timelist[n] = pandas.to_datetime(timelist[n])
+
+    print("Calculating Avgs")
+
+    newData = data
+    newData["1DayAvg"] = pandas.Series(
+        data['Price']).ewm(span=96, min_periods=96).mean()
+    newData["14DayAvg"] = pandas.Series(
+        data['Price']).ewm(span=1344, min_periods=1344).mean()
+    newData["30DayAvg"] = pandas.Series(
+        data['Price']).ewm(span=2880, min_periods=2880).mean()
+    newData["180DayAvg"] = pandas.Series(
+        data['Price']).ewm(span=17280, min_periods=17280).mean()
+
+    # The price is in an upward trend (increasing) if the marketTrend is positive - will not buy if there's no upwards trend
+    newData["MarketTrend"] = data["Price"] - data["180DayAvg"]
+
+    # Indicates to buy if positive
+    newData["Indicator"] = data["14DayAvg"] - data["30DayAvg"]
+
+    data['Signal'] = pandas.Series(data['Indicator']).ewm(
+        span=96, min_periods=96).mean()
+
+    # Center line
+    data['Center'] = data['Indicator'] - data['Signal']
+
+    print("Data Averaged")
+
+    newData.to_csv(symbol + "_AVG.csv", index=timelist, header=True)
+    return newData
+
+
+# def mainloop():
+#     # TODO change to hour.at(:"01   ")
+#     schedule.every().minute.at(":00").do(update)
+#     print("Started at " + str(datetime.datetime.now()))
+#     while True:
+#         schedule.run_pending()
+
+def simulateTrades(data, testVal):
+    data = data.tail(-17298)
+    timelist = list(data.index.values)
+    timelist = [pandas.to_datetime(n) for n in timelist]
+    # Set starting values
+    balanceUSD = STARTING_CASH
+    cryptBalance = 0
+
+    avgEarnings = (STARTING_CASH / query(data, timelist[0], "Price")) * query(
+        data, timelist[len(timelist) - 1], "Price")
+    print(f"Final price to beat: {avgEarnings}")
+
+    df = pandas.DataFrame(index=timelist, columns=[
+        "Price", "Earnings", "Cash"])
+
+    stopLoss = 0
+
+    for time in tqdm.tqdm(timelist):
+        price = query(data, time, "Price")
+
+        # The price is in an upward trend (increasing) if the marketTrend is positive - will not buy if there's no upwards trend
+        marketTrend = query(data, time, "MarketTrend")
+        # Indicates to buy if positive
+        indicator = query(data, time, "Indicator")
+        # Center of indicator
+        center = query(data, time, "Center")
+
+        if stopLoss != 0 and (price < stopLoss or indicator < 0):
+            # sell
+            diff = cryptBalance
+            cryptBalance -= diff
+            balanceUSD += (diff * price) * .999  # To account for 0.1% Fee
+            stopLoss = 0
+
+        if stopLoss == 0 and marketTrend > 0 and indicator > 0:
+            # If the indicator is positive and greater than the center, buy
+            diff = balanceUSD
+            balanceUSD -= diff
+            cryptBalance += diff / price
+            if stopLoss == 0:
+                stopLoss = query(data, time, "180DayAvg") * .9
+
+        df["Price"][time] = price
+        df["Earnings"][time] = balanceUSD + (price * cryptBalance)
+    df.to_csv(symbol + "_EarningsTime.csv", index=timelist, header=True)
+    print(f"Earnings from {testVal}: {balanceUSD + (price * cryptBalance)}")
+
+
+class App(ctk.CTk):
     def __init__(self, *args, **kwargs):
-        tk.Tk.__init__(self, *args, **kwargs)
+        ctk.CTk.__init__(self, *args, **kwargs)
         self.title("CryptFalcon")
         self.minsize(1280, 720)
+        self.defaultFont = tk.font.nametofont("TkDefaultFont")
+        self.defaultFont.configure(family="Segoe", size=12)
 
         for x in range(2):
             self.columnconfigure(x, weight=1, uniform="")
-        for y in range(3):
-            self.rowconfigure(y, weight=1, uniform="")
 
-        self.titleFrame = tk.Frame(self)
+        self.rowconfigure(0, weight=1, uniform="")
+        self.rowconfigure(1, weight=2, uniform="")
+        self.rowconfigure(2, weight=2, uniform="")
+
+        self.titleFrame = ctk.CTkFrame(self)
         self.titleFrame.columnconfigure(0, weight=1, uniform="")
         self.titleFrame.rowconfigure(0, weight=0, uniform="")
         self.titleFrame.rowconfigure(1, weight=0, uniform="")
-        self.titleLabel = tk.Label(self.titleFrame, text="CryptFalcon")
-        self.titleLabel.grid(row=0, column=0, sticky=tk.NSEW)
-        self.clockLabel = tk.Label(self.titleFrame, text="00:00:00")
-        self.clockLabel.grid(row=1, column=0, sticky=tk.NSEW)
-        self.titleFrame.grid(row=0, column=0, sticky=tk.NSEW)
+        ctk.CTkLabel(self.titleFrame, text="CryptFalcon", font=(
+            "Segoe", 22), justify=tk.CENTER).pack(expand=True)
+        self.clockLabel = ctk.CTkLabel(
+            self.titleFrame, text="00:00:00", font=("Segoe", 18))
+        self.clockLabel.pack(expand=True)
+        self.titleFrame.grid(row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
 
-        self.queryFrame = ttk.LabelFrame(self, text="Query Price")
+        self.initQueryFrame()
+
+        self.initTransactFrame()
+
+        # self.transactFrame = ttk.LabelFrame(self, text="Make a Transaction")
+        # self.transactFrame.grid(row=2, column=0, sticky=tk.NSEW)
+
+    def initQueryFrame(self):
+        self.queryFrame = ctk.CTkFrame(self)
         for x in range(2):
             self.queryFrame.columnconfigure(x, weight=1, uniform="")
-        for y in range(4):
+        for y in range(6):
             self.queryFrame.rowconfigure(y, weight=1, uniform="")
-        tk.Label(self.queryFrame, text="Test").grid(row=0, column=0)
-        self.symbolLabel = tk.Entry(self.queryFrame)
-        self.symbolLabel.grid(row=0, column=1, sticky=tk.EW)
-        self.queryButton = tk.Button(self.queryFrame, text="Search!")
-        self.queryButton.grid(row=1, column=0, columnspan=2, sticky=tk.EW)
-        self.priceAnswer = tk.Label(
-            self.queryFrame, text="The price for ____ is ____")
-        self.balanceAnswer = tk.Label(
-            self.queryFrame, text="Your current balance (USDT) is ____")
-        self.valueAnswer = tk.Label(
-            self.queryFrame, text="You can afford ____ _____")
-        self.priceAnswer.grid(row=2, column=0, columnspan=2, sticky=tk.EW)
-        self.balanceAnswer.grid(row=3, column=0, columnspan=2, sticky=tk.EW)
-        self.valueAnswer.grid(row=4, column=0, columnspan=2, sticky=tk.EW)
-        self.queryFrame.grid(row=1, column=0, sticky=tk.NSEW)
+        ctk.CTkLabel(self.queryFrame, text="Check Prices", font=("Segoe", 16), justify=tk.CENTER).grid(
+            row=0, column=0, columnspan=2, sticky=tk.EW)
+        ctk.CTkLabel(self.queryFrame, text="Symbol").grid(
+            row=1, column=0, sticky=tk.W)
+        self.queryFrame.symbolEntry = ctk.CTkEntry(
+            self.queryFrame, justify=tk.CENTER)
+        self.queryFrame.symbolEntry.grid(row=1, column=1, sticky=tk.EW)
+        self.queryFrame.queryButton = ctk.CTkButton(
+            self.queryFrame, text="Search!", command=self.search)
+        self.queryFrame.queryButton.grid(row=2, column=0,
+                                         columnspan=2, sticky=tk.EW)
+        ctk.CTkLabel(self.queryFrame, text="Price:").grid(
+            row=3, column=0, sticky=tk.W)
 
-        self.transactFrame = ttk.LabelFrame(self, text="Make a Transaction")
-        self.transactFrame.grid(row=2, column=0, sticky=tk.NSEW)
+        ctk.CTkLabel(self.queryFrame, text="Current Balance (USDT):").grid(
+            row=4, column=0, sticky=tk.W)
+        ctk.CTkLabel(self.queryFrame, text="Can Afford:").grid(
+            row=5, column=0, sticky=tk.W)
+
+        self.queryFrame.priceAnswer = ctk.CTkEntry(
+            self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
+        self.queryFrame.priceAnswer.grid(row=3, column=1, sticky=tk.EW)
+
+        self.queryFrame.balanceAnswer = ctk.CTkEntry(
+            self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
+        self.queryFrame.balanceAnswer.grid(row=4, column=1, sticky=tk.EW)
+
+        self.queryFrame.affordsAnswer = ctk.CTkEntry(
+            self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
+        self.queryFrame.affordsAnswer.grid(row=5, column=1, sticky=tk.EW)
+
+        self.queryFrame.grid(row=1, column=0, sticky=tk.NSEW, padx=5, pady=5)
+
+        for child in self.queryFrame.winfo_children():
+            child.grid_configure(pady=5, padx=5)
+
+    def initTransactFrame(self):
+        self.transactFrame = ctk.CTkFrame(self)
+        for x in range(2):
+            self.transactFrame.columnconfigure(x, weight=1, uniform="")
+        for y in range(6):
+            self.transactFrame.rowconfigure(y, weight=1, uniform="")
+        ctk.CTkLabel(self.transactFrame, text="Make a Transaction", font=("Segoe", 16), justify=tk.CENTER).grid(
+            row=0, column=0, columnspan=2, sticky=tk.EW)
+        ctk.CTkLabel(self.transactFrame, text="Symbol").grid(
+            row=1, column=0, sticky=tk.W)
+        self.transactFrame.symbolEntry = ctk.CTkEntry(
+            self.transactFrame, justify=tk.CENTER)
+        self.transactFrame.symbolEntry.grid(row=1, column=1, sticky=tk.EW)
+        self.transactFrame.transactButton = ctk.CTkButton(
+            self.transactFrame, text="Search!", command=self.search)
+        self.transactFrame.transactButton.grid(row=2, column=0,
+                                               columnspan=2, sticky=tk.EW)
+        ctk.CTkLabel(self.transactFrame, text="Price:").grid(
+            row=3, column=0, sticky=tk.W)
+
+        ctk.CTkLabel(self.transactFrame, text="Current Balance (USDT):").grid(
+            row=4, column=0, sticky=tk.W)
+        ctk.CTkLabel(self.transactFrame, text="Can Afford:").grid(
+            row=5, column=0, sticky=tk.W)
+
+        self.transactFrame.priceAnswer = ctk.CTkEntry(
+            self.transactFrame, justify=tk.CENTER, state=tk.DISABLED)
+        self.transactFrame.priceAnswer.grid(row=3, column=1, sticky=tk.EW)
+
+        self.transactFrame.balanceAnswer = ctk.CTkEntry(
+            self.transactFrame, justify=tk.CENTER, state=tk.DISABLED)
+        self.transactFrame.balanceAnswer.grid(row=4, column=1, sticky=tk.EW)
+
+        self.transactFrame.affordsAnswer = ctk.CTkEntry(
+            self.transactFrame, justify=tk.CENTER, state=tk.DISABLED)
+        self.transactFrame.affordsAnswer.grid(row=5, column=1, sticky=tk.EW)
+
+        self.transactFrame.grid(
+            row=2, column=0, sticky=tk.NSEW, padx=5, pady=5)
+
+        for child in self.transactFrame.winfo_children():
+            child.grid_configure(pady=5, padx=5)
+
+    def search(self):
+        symb = self.queryFrame.symbolEntry.get()
+        try:
+            price = scrapeRecent(symb)
+            balance = getBalance("USDT")
+            afford = balance / price
+            self.queryFrame.priceAnswer.configure(state=tk.NORMAL)
+            self.queryFrame.priceAnswer.delete(0, tk.END)
+            self.queryFrame.priceAnswer.insert(0, price)
+            self.queryFrame.priceAnswer.configure(state=tk.DISABLED)
+
+            self.queryFrame.balanceAnswer.configure(state=tk.NORMAL)
+            self.queryFrame.balanceAnswer.delete(0, tk.END)
+            self.queryFrame.balanceAnswer.insert(0, balance)
+            self.queryFrame.balanceAnswer.configure(state=tk.DISABLED)
+
+            self.queryFrame.affordsAnswer.configure(state=tk.NORMAL)
+            self.queryFrame.affordsAnswer.delete(0, tk.END)
+            self.queryFrame.affordsAnswer.insert(0, afford)
+            self.queryFrame.affordsAnswer.configure(state=tk.DISABLED)
+        except:
+            msg.showerror(
+                title="Error", message=f"\"{symb}\" is not a valid symbol")
+            pass
+
+    def time(self):
+        self.clockLabel.after(1000, self.time)
+        self.clockLabel.configure(text=strftime("%H:%M:%S"))
+
+    def on_delete(self):
+        if msg.askyesno("Quit", "Would you like to Exit?"):
+            self.destroy()
 
 
 def main():
-    app = App()
 
     # print(scrapeRec/ent())
     # raw = scrapeHist()
     # raw = readRawHist()
     # writeAvgPrice(raw)
+    # data = readAvgHist()
+    # for i in range(50):
+    #     simulateTrades(data, i-25)
     # mainloop
     # update()
     # sell()
-    app.mainloop()
     # emailSelf()
+
+    app = App()
+    app.protocol("WM_DELETE_WINDOW", app.on_delete)
+    threading.Thread(target=app.time).start()
+    app.bind_all("<Button-1>", lambda event: event.widget.focus_set())
+
+    try:
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(1)
+    finally:
+        app.mainloop()
+        os._exit(0)
 
 
 if __name__ == "__main__":
