@@ -1,6 +1,7 @@
 from itertools import product
 import os
 import datetime
+from queue import Queue
 import pandas
 from binance.client import Client
 from binance.enums import *
@@ -19,7 +20,11 @@ import os
 from tkinter import messagebox as msg
 import customtkinter as ctk
 import tkcalendar
+from datetime import datetime, timedelta
+import time  # TODO Remove
 
+
+ctk.set_appearance_mode("Light")
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
 
@@ -49,7 +54,7 @@ def scrapeRecent(sym):
     return float(price["price"])
 
 
-def scrapeHist():
+def scrapeHist(symb, startDate):
     interval = "15m"
 
     # Create Client
@@ -58,16 +63,16 @@ def scrapeHist():
 
     print("Scraping Hist at increment: " + interval)
     # Get Data
-    hist = client.get_historical_klines(symbol, interval, "5 Jul, 2015")
+    hist = client.get_historical_klines(symb, interval, startDate)
 
     print("Processing Data...", end="\r")
     # Process Data
     dates = []
     inf = []
     for list in hist:
-        dates.append(datetime.datetime.fromtimestamp(list[0] / 1000.0))
+        dates.append(datetime.fromtimestamp(list[0] / 1000.0))
         inf.append(
-            [datetime.datetime.fromtimestamp(
+            [datetime.fromtimestamp(
                 list[0] / 1000.0), list[1], list[5]]
         )
     print("Data Processed       ")
@@ -75,7 +80,7 @@ def scrapeHist():
 
     # Manage data and create CSV
     raw = pandas.DataFrame(inf, index=dates, columns=["Time", "Price", "Vol"])
-    raw.to_csv(symbol + ".csv", index=None, header=True)
+    raw.to_csv(symb + ".csv", index=None, header=True)
 
     raw = readRawHist()
     del client
@@ -90,18 +95,19 @@ def getBalance(sym):
     return float(price["free"])
 
 
-def buy():
-    q = round((getBalance("USDT")/scrapeRecent()) * .9, 4)
+def buy(cash, symb):
+    q = round((cash/scrapeRecent(symb)) * .9, 4)
     client = Client(api_key, api_secret, tld='us')
     client.API_URL = url
-    client.order_market_buy(symbol=symbol,
+    client.order_market_buy(symbol=symb,
                             quantity=q)
 
 
-def sell():
+def sell(cash, symb):
+    q = round(cash/scrapeRecent(symb), 4)
     client = Client(api_key, api_secret, tld='us')
     client.order_market_sell(
-        symbol=symbol, quantity=getBalance(shortSymbol))
+        symbol=symb, quantity=getBalance(shortSymbol))
 
 
 def readRawHist():
@@ -173,22 +179,23 @@ def writeAvgPrice(data):
     print("Data Averaged")
 
     newData.to_csv(symbol + "_AVG.csv", index=timelist, header=True)
-    return newData
+    return readAvgHist()
 
 
 # def mainloop():
 #     # TODO change to hour.at(:"01   ")
 #     schedule.every().minute.at(":00").do(update)
-#     print("Started at " + str(datetime.datetime.now()))
+#     print("Started at " + str(datetime.now()))
 #     while True:
 #         schedule.run_pending()
 
-def simulateTrades(data, testVal):
+def simulateTrades(data, stop, cash):
     data = data.tail(-17298)
     timelist = list(data.index.values)
     timelist = [pandas.to_datetime(n) for n in timelist]
+    timelist = [n for n in timelist if n <= stop]
     # Set starting values
-    balanceUSD = STARTING_CASH
+    balanceUSD = int(cash)
     cryptBalance = 0
 
     avgEarnings = (STARTING_CASH / query(data, timelist[0], "Price")) * query(
@@ -196,7 +203,7 @@ def simulateTrades(data, testVal):
     print(f"Final price to beat: {avgEarnings}")
 
     df = pandas.DataFrame(index=timelist, columns=[
-        "Price", "Earnings", "Cash"])
+        "Earnings", "Price"])
 
     stopLoss = 0
 
@@ -228,7 +235,8 @@ def simulateTrades(data, testVal):
         df["Price"][time] = price
         df["Earnings"][time] = balanceUSD + (price * cryptBalance)
     df.to_csv(symbol + "_EarningsTime.csv", index=timelist, header=True)
-    print(f"Earnings from {testVal}: {balanceUSD + (price * cryptBalance)}")
+    print(f"Earnings: {balanceUSD + (price * cryptBalance)}")
+    return balanceUSD + (price * cryptBalance)
 
 
 class App(ctk.CTk):
@@ -254,6 +262,7 @@ class App(ctk.CTk):
             self.titleFrame, text="00:00:00", font=("Segoe", 18))
         self.clockLabel.pack(expand=True)
         self.titleFrame.grid(row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
+        self.isTrading = False
 
         self.initQueryFrame()
 
@@ -270,7 +279,7 @@ class App(ctk.CTk):
         self.queryFrame = ctk.CTkFrame(self)
         for x in range(2):
             self.queryFrame.columnconfigure(x, weight=1, uniform="")
-        for y in range(6):
+        for y in range(7):
             self.queryFrame.rowconfigure(y, weight=1, uniform="")
         ctk.CTkLabel(self.queryFrame, text="Check Prices", font=("Segoe", 16), justify=tk.CENTER).grid(
             row=0, column=0, columnspan=2, sticky=tk.EW)
@@ -279,7 +288,7 @@ class App(ctk.CTk):
         self.queryFrame.symbolEntry = ctk.CTkEntry(
             self.queryFrame, justify=tk.CENTER)
         self.queryFrame.symbolEntry.grid(row=1, column=1, sticky=tk.EW)
-        self.queryFrame.symbolEntry.insert(0, "ETHUSDT")
+        self.queryFrame.symbolEntry.insert(0, "ETH")
         self.queryFrame.queryButton = ctk.CTkButton(
             self.queryFrame, text="Search!", command=self.search)
         self.queryFrame.queryButton.grid(row=2, column=0,
@@ -287,22 +296,30 @@ class App(ctk.CTk):
         ctk.CTkLabel(self.queryFrame, text="Price:").grid(
             row=3, column=0, sticky=tk.W)
 
-        ctk.CTkLabel(self.queryFrame, text="Current Balance (USDT):").grid(
+        ctk.CTkLabel(self.queryFrame, text="Crypto Balance:").grid(
             row=4, column=0, sticky=tk.W)
-        ctk.CTkLabel(self.queryFrame, text="Can Afford:").grid(
+
+        ctk.CTkLabel(self.queryFrame, text="Current Balance (USDT):").grid(
             row=5, column=0, sticky=tk.W)
+
+        ctk.CTkLabel(self.queryFrame, text="Can Afford:").grid(
+            row=6, column=0, sticky=tk.W)
 
         self.queryFrame.priceAnswer = ctk.CTkEntry(
             self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
         self.queryFrame.priceAnswer.grid(row=3, column=1, sticky=tk.EW)
 
+        self.queryFrame.cryptoAnswer = ctk.CTkEntry(
+            self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
+        self.queryFrame.cryptoAnswer.grid(row=4, column=1, sticky=tk.EW)
+
         self.queryFrame.balanceAnswer = ctk.CTkEntry(
             self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
-        self.queryFrame.balanceAnswer.grid(row=4, column=1, sticky=tk.EW)
+        self.queryFrame.balanceAnswer.grid(row=5, column=1, sticky=tk.EW)
 
         self.queryFrame.affordsAnswer = ctk.CTkEntry(
             self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
-        self.queryFrame.affordsAnswer.grid(row=5, column=1, sticky=tk.EW)
+        self.queryFrame.affordsAnswer.grid(row=6, column=1, sticky=tk.EW)
 
         self.queryFrame.grid(row=1, column=0, rowspan=3,
                              sticky=tk.NSEW, padx=5, pady=5)
@@ -332,22 +349,22 @@ class App(ctk.CTk):
         self.transactFrame.sellEntry.grid(row=1, column=3, sticky=tk.EW)
 
         self.transactFrame.buyMax = ctk.CTkButton(
-            self.transactFrame, text="Find Maximum Buy")
+            self.transactFrame, text="Find Maximum Buy", command=self.findMaxBuy)
         self.transactFrame.buyMax.grid(
             row=2, column=0, columnspan=2, sticky=tk.EW)
 
         self.transactFrame.sellMax = ctk.CTkButton(
-            self.transactFrame, text="Find Maximum Sell")
+            self.transactFrame, text="Find Maximum Sell", command=self.findMaxSell)
         self.transactFrame.sellMax.grid(
             row=2, column=2, columnspan=2, sticky=tk.EW)
 
         self.transactFrame.buyButton = ctk.CTkButton(
-            self.transactFrame, text="Buy")
+            self.transactFrame, text="Buy", command=self.buy)
         self.transactFrame.buyButton.grid(
             row=3, column=0, columnspan=2, sticky=tk.EW)
 
         self.transactFrame.sellButton = ctk.CTkButton(
-            self.transactFrame, text="Sell")
+            self.transactFrame, text="Sell", command=self.sell)
         self.transactFrame.sellButton.grid(
             row=3, column=2, columnspan=2, sticky=tk.EW)
 
@@ -370,22 +387,23 @@ class App(ctk.CTk):
             row=1, column=0, sticky=tk.W)
         self.simulateFrame.startCashEntry = ctk.CTkEntry(
             self.simulateFrame, justify=tk.CENTER)
+        self.simulateFrame.startCashEntry.insert(0, "50")
         self.simulateFrame.startCashEntry.grid(row=1, column=1, sticky=tk.EW)
 
         ctk.CTkLabel(self.simulateFrame, text="Start Date:").grid(
             row=2, column=0, sticky=tk.W)
         self.simulateFrame.startDateEntry = tkcalendar.DateEntry(
-            self.simulateFrame)
+            self.simulateFrame, justify=tk.CENTER)
         self.simulateFrame.startDateEntry.grid(row=2, column=1, sticky=tk.EW)
 
         ctk.CTkLabel(self.simulateFrame, text="Stop Date:").grid(
             row=3, column=0, sticky=tk.W)
         self.simulateFrame.stopDateEntry = tkcalendar.DateEntry(
-            self.simulateFrame)
+            self.simulateFrame, justify=tk.CENTER)
         self.simulateFrame.stopDateEntry.grid(row=3, column=1, sticky=tk.EW)
 
         self.simulateFrame.simulateButton = ctk.CTkButton(
-            self.simulateFrame, text="Start Simulation")
+            self.simulateFrame, text="Start Simulation", command=self.simulate)
         self.simulateFrame.simulateButton.grid(
             row=4, column=0, columnspan=2, sticky=tk.EW)
 
@@ -405,26 +423,26 @@ class App(ctk.CTk):
             row=0, column=0, columnspan=4, sticky=tk.EW)
 
         self.runFrame.toggleButton = ctk.CTkButton(
-            self.runFrame, text="Start Trading")
+            self.runFrame, text="Start Trading", command=self.toggleTrades)
         self.runFrame.toggleButton.grid(
             row=1, column=0, columnspan=2, sticky=tk.EW)
 
         ctk.CTkLabel(self.runFrame, text="Current Balance:").grid(
             row=2, column=0, sticky=tk.W)
         self.runFrame.balanceEntry = ctk.CTkEntry(
-            self.runFrame, justify=tk.CENTER)
+            self.runFrame, justify=tk.CENTER, state=tk.DISABLED)
         self.runFrame.balanceEntry.grid(row=2, column=1, sticky=tk.EW)
 
         ctk.CTkLabel(self.runFrame, text="Current Price:").grid(
             row=3, column=0, sticky=tk.W)
         self.runFrame.priceEntry = ctk.CTkEntry(
-            self.runFrame, justify=tk.CENTER)
+            self.runFrame, justify=tk.CENTER, state=tk.DISABLED)
         self.runFrame.priceEntry.grid(row=3, column=1, sticky=tk.EW)
 
         ctk.CTkLabel(self.runFrame, text="Profit:").grid(
             row=4, column=0, sticky=tk.W)
         self.runFrame.profitEntry = ctk.CTkEntry(
-            self.runFrame, justify=tk.CENTER)
+            self.runFrame, justify=tk.CENTER, state=tk.DISABLED)
         self.runFrame.profitEntry.grid(row=4, column=1, sticky=tk.EW)
 
         self.runFrame.grid(row=3, column=1, rowspan=3,
@@ -436,13 +454,19 @@ class App(ctk.CTk):
     def search(self):
         symb = self.queryFrame.symbolEntry.get()
         try:
-            price = scrapeRecent(symb)
+            price = scrapeRecent(symb + "USDT")
             balance = getBalance("USDT")
+            cryptoBalance = getBalance(symb)
             afford = balance / price
             self.queryFrame.priceAnswer.configure(state=tk.NORMAL)
             self.queryFrame.priceAnswer.delete(0, tk.END)
             self.queryFrame.priceAnswer.insert(0, price)
             self.queryFrame.priceAnswer.configure(state=tk.DISABLED)
+
+            self.queryFrame.cryptoAnswer.configure(state=tk.NORMAL)
+            self.queryFrame.cryptoAnswer.delete(0, tk.END)
+            self.queryFrame.cryptoAnswer.insert(0, cryptoBalance)
+            self.queryFrame.cryptoAnswer.configure(state=tk.DISABLED)
 
             self.queryFrame.balanceAnswer.configure(state=tk.NORMAL)
             self.queryFrame.balanceAnswer.delete(0, tk.END)
@@ -453,6 +477,9 @@ class App(ctk.CTk):
             self.queryFrame.affordsAnswer.delete(0, tk.END)
             self.queryFrame.affordsAnswer.insert(0, afford)
             self.queryFrame.affordsAnswer.configure(state=tk.DISABLED)
+
+            self.findMaxBuy()
+            self.findMaxSell()
         except:
             msg.showerror(
                 title="Error", message=f"\"{symb}\" is not a valid symbol")
@@ -470,7 +497,7 @@ class App(ctk.CTk):
     def findMaxSell(self):
         symb = self.queryFrame.symbolEntry.get()
         try:
-            price = scrapeRecent(symb)
+            price = scrapeRecent(symb + "USDT")
             balance = getBalance(symb)
             amount = price * balance
             self.transactFrame.sellEntry.delete(0, tk.END)
@@ -478,6 +505,109 @@ class App(ctk.CTk):
         except:
             msg.showerror(
                 title="Error", message=f"\"{symb}\" is not a valid symbol")
+
+    def buy(self):
+        symb = self.queryFrame.symbolEntry.get() + "USDT"
+        cash = float(self.transactFrame.buyEntry.get())
+        buy(cash, symb)
+        self.search()
+        self.findMaxBuy()
+        self.findMaxSell()
+
+    def sell(self):
+        symb = self.queryFrame.symbolEntry.get() + "USDT"
+        cash = float(self.transactFrame.buyEntry.get())
+        sell(cash, symb)
+        self.search()
+        self.findMaxBuy()
+        self.findMaxSell()
+
+    def simulate(self):
+        self.top = ctk.CTkToplevel(self)
+        ctk.CTkLabel(self.top, text="Simulating").grid(
+            row=0, column=0, sticky=tk.EW)
+        self.top.loading = ctk.CTkProgressBar(self.top, mode='indeterminate')
+        self.top.loading.grid(row=1, column=0, sticky=tk.EW)
+        self.top.loading.start()
+        self.top.update()
+        self.top.lift()
+        self.top.focus_force()
+        self.top.grab_set()
+        self.q = Queue()
+
+        symb = self.queryFrame.symbolEntry.get() + "USDT"
+        start = datetime.strptime(
+            self.simulateFrame.startDateEntry.get(), "%m/%d/%y")
+        start -= timedelta(days=180)
+        stop = datetime.strptime(
+            self.simulateFrame.stopDateEntry.get(), "%m/%d/%y")
+        cash = self.simulateFrame.startCashEntry.get()
+
+        tempThread = threading.Thread(
+            target=self.simhelper, args=[symb, start, stop, cash])
+        tempThread.start()
+
+        self.monitor(tempThread)
+        # symb = self.simulateFrame.startCashEntry.get()
+        # start = datetime.strptime(
+        #     self.simulateFrame.startDateEntry.get(), "%m/%d/%y")
+        # start -= timedelta(days=180)
+        # stop = datetime.strptime(
+        #     self.simulateFrame.stopDateEntry.get(), "%m/%d/%y")
+        # raw = scrapeHist(datetime.strftime(start, "%#d %b, %Y"))
+        # data = writeAvgPrice(raw)
+        # simulateTrades(data, stop)
+
+    def toggleTrades(self):
+        if self.isTrading:
+            self.isTrading = False
+            self.runFrame.toggleButton.configure(text="Start Trading")
+            self.runFrame.balanceEntry.configure(state=tk.NORMAL)
+            self.runFrame.balanceEntry.delete(0, tk.END)
+            self.runFrame.balanceEntry.insert(0, "0.00")
+            self.runFrame.balanceEntry.configure(state=tk.DISABLED)
+            self.runFrame.priceEntry.configure(state=tk.NORMAL)
+            self.runFrame.priceEntry.delete(0, tk.END)
+            self.runFrame.priceEntry.insert(0, "0.00")
+            self.runFrame.priceEntry.configure(state=tk.DISABLED)
+            self.runFrame.profitEntry.configure(state=tk.NORMAL)
+            self.runFrame.profitEntry.delete(0, tk.END)
+            self.runFrame.profitEntry.insert(0, "0.00")
+            self.runFrame.profitEntry.configure(state=tk.DISABLED)
+        else:
+            self.isTrading = True
+            self.runFrame.toggleButton.configure(text="Stop Trading")
+            time.sleep(1.2)
+            symb = self.queryFrame.symbolEntry.get()
+            price = scrapeRecent(symb + "USDT")
+            balance = getBalance("USDT") + (price * getBalance(symb))
+            self.runFrame.balanceEntry.configure(state=tk.NORMAL)
+            self.runFrame.balanceEntry.delete(0, tk.END)
+            self.runFrame.balanceEntry.insert(0, f"{balance:.2f}")
+            self.runFrame.balanceEntry.configure(state=tk.DISABLED)
+            self.runFrame.priceEntry.configure(state=tk.NORMAL)
+            self.runFrame.priceEntry.delete(0, tk.END)
+            self.runFrame.priceEntry.insert(0, f"{price:.2f}")
+            self.runFrame.priceEntry.configure(state=tk.DISABLED)
+            self.runFrame.profitEntry.configure(state=tk.NORMAL)
+            self.runFrame.profitEntry.delete(0, tk.END)
+            self.runFrame.profitEntry.insert(0, "0.00")
+            self.runFrame.profitEntry.configure(state=tk.DISABLED)
+
+    def monitor(self, thread):
+        if thread.is_alive():
+            self.after(100, lambda: self.monitor(thread))
+        else:
+            self.top.destroy()
+            msg.showinfo(title="Earnings",
+                         message=f"After simulation, you have {self.q.get():.2f}")
+
+    def simhelper(self, symb, start, stop, cash):
+
+        raw = scrapeHist(symb, datetime.strftime(start, "%#d %b, %Y"))
+        data = writeAvgPrice(raw)
+        ans = simulateTrades(data, stop, cash)
+        self.q.put(ans)
 
     def time(self):
         self.clockLabel.after(1000, self.time)
