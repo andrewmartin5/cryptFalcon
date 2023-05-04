@@ -18,6 +18,7 @@ import threading
 import os
 from tkinter import messagebox as msg
 import customtkinter as ctk
+import tkcalendar
 
 
 # REF: https://python.plainenglish.io/how-to-download-trading-data-from-binance-with-python-21634af30195
@@ -240,10 +241,8 @@ class App(ctk.CTk):
 
         for x in range(2):
             self.columnconfigure(x, weight=1, uniform="")
-
-        self.rowconfigure(0, weight=1, uniform="")
-        self.rowconfigure(1, weight=2, uniform="")
-        self.rowconfigure(2, weight=2, uniform="")
+        for y in range(6):
+            self.rowconfigure(y, weight=1, uniform="")
 
         self.titleFrame = ctk.CTkFrame(self)
         self.titleFrame.columnconfigure(0, weight=1, uniform="")
@@ -259,6 +258,10 @@ class App(ctk.CTk):
         self.initQueryFrame()
 
         self.initTransactFrame()
+
+        self.initSimulateFrame()
+
+        self.initRunFrame()
 
         # self.transactFrame = ttk.LabelFrame(self, text="Make a Transaction")
         # self.transactFrame.grid(row=2, column=0, sticky=tk.NSEW)
@@ -276,6 +279,7 @@ class App(ctk.CTk):
         self.queryFrame.symbolEntry = ctk.CTkEntry(
             self.queryFrame, justify=tk.CENTER)
         self.queryFrame.symbolEntry.grid(row=1, column=1, sticky=tk.EW)
+        self.queryFrame.symbolEntry.insert(0, "ETHUSDT")
         self.queryFrame.queryButton = ctk.CTkButton(
             self.queryFrame, text="Search!", command=self.search)
         self.queryFrame.queryButton.grid(row=2, column=0,
@@ -300,52 +304,133 @@ class App(ctk.CTk):
             self.queryFrame, justify=tk.CENTER, state=tk.DISABLED)
         self.queryFrame.affordsAnswer.grid(row=5, column=1, sticky=tk.EW)
 
-        self.queryFrame.grid(row=1, column=0, sticky=tk.NSEW, padx=5, pady=5)
+        self.queryFrame.grid(row=1, column=0, rowspan=3,
+                             sticky=tk.NSEW, padx=5, pady=5)
 
         for child in self.queryFrame.winfo_children():
             child.grid_configure(pady=5, padx=5)
 
     def initTransactFrame(self):
         self.transactFrame = ctk.CTkFrame(self)
-        for x in range(2):
+        for x in range(4):
             self.transactFrame.columnconfigure(x, weight=1, uniform="")
-        for y in range(6):
+        for y in range(4):
             self.transactFrame.rowconfigure(y, weight=1, uniform="")
         ctk.CTkLabel(self.transactFrame, text="Make a Transaction", font=("Segoe", 16), justify=tk.CENTER).grid(
-            row=0, column=0, columnspan=2, sticky=tk.EW)
-        ctk.CTkLabel(self.transactFrame, text="Symbol").grid(
+            row=0, column=0, columnspan=4, sticky=tk.EW)
+
+        ctk.CTkLabel(self.transactFrame, text="Buy Amount (USD):").grid(
             row=1, column=0, sticky=tk.W)
-        self.transactFrame.symbolEntry = ctk.CTkEntry(
+        self.transactFrame.buyEntry = ctk.CTkEntry(
             self.transactFrame, justify=tk.CENTER)
-        self.transactFrame.symbolEntry.grid(row=1, column=1, sticky=tk.EW)
-        self.transactFrame.transactButton = ctk.CTkButton(
-            self.transactFrame, text="Search!", command=self.search)
-        self.transactFrame.transactButton.grid(row=2, column=0,
-                                               columnspan=2, sticky=tk.EW)
-        ctk.CTkLabel(self.transactFrame, text="Price:").grid(
-            row=3, column=0, sticky=tk.W)
+        self.transactFrame.buyEntry.grid(row=1, column=1, sticky=tk.EW)
 
-        ctk.CTkLabel(self.transactFrame, text="Current Balance (USDT):").grid(
-            row=4, column=0, sticky=tk.W)
-        ctk.CTkLabel(self.transactFrame, text="Can Afford:").grid(
-            row=5, column=0, sticky=tk.W)
+        ctk.CTkLabel(self.transactFrame, text="Sell Amount (USD):").grid(
+            row=1, column=2, sticky=tk.W)
+        self.transactFrame.sellEntry = ctk.CTkEntry(
+            self.transactFrame, justify=tk.CENTER)
+        self.transactFrame.sellEntry.grid(row=1, column=3, sticky=tk.EW)
 
-        self.transactFrame.priceAnswer = ctk.CTkEntry(
-            self.transactFrame, justify=tk.CENTER, state=tk.DISABLED)
-        self.transactFrame.priceAnswer.grid(row=3, column=1, sticky=tk.EW)
+        self.transactFrame.buyMax = ctk.CTkButton(
+            self.transactFrame, text="Find Maximum Buy")
+        self.transactFrame.buyMax.grid(
+            row=2, column=0, columnspan=2, sticky=tk.EW)
 
-        self.transactFrame.balanceAnswer = ctk.CTkEntry(
-            self.transactFrame, justify=tk.CENTER, state=tk.DISABLED)
-        self.transactFrame.balanceAnswer.grid(row=4, column=1, sticky=tk.EW)
+        self.transactFrame.sellMax = ctk.CTkButton(
+            self.transactFrame, text="Find Maximum Sell")
+        self.transactFrame.sellMax.grid(
+            row=2, column=2, columnspan=2, sticky=tk.EW)
 
-        self.transactFrame.affordsAnswer = ctk.CTkEntry(
-            self.transactFrame, justify=tk.CENTER, state=tk.DISABLED)
-        self.transactFrame.affordsAnswer.grid(row=5, column=1, sticky=tk.EW)
+        self.transactFrame.buyButton = ctk.CTkButton(
+            self.transactFrame, text="Buy")
+        self.transactFrame.buyButton.grid(
+            row=3, column=0, columnspan=2, sticky=tk.EW)
+
+        self.transactFrame.sellButton = ctk.CTkButton(
+            self.transactFrame, text="Sell")
+        self.transactFrame.sellButton.grid(
+            row=3, column=2, columnspan=2, sticky=tk.EW)
 
         self.transactFrame.grid(
-            row=2, column=0, sticky=tk.NSEW, padx=5, pady=5)
+            row=4, column=0, rowspan=2, sticky=tk.NSEW, padx=5, pady=5)
 
         for child in self.transactFrame.winfo_children():
+            child.grid_configure(pady=5, padx=5)
+
+    def initSimulateFrame(self):
+        self.simulateFrame = ctk.CTkFrame(self)
+        for x in range(2):
+            self.simulateFrame.columnconfigure(x, weight=1, uniform="")
+        for y in range(4):
+            self.simulateFrame.rowconfigure(y, weight=1, uniform="")
+        ctk.CTkLabel(self.simulateFrame, text="Simulate a Run", font=("Segoe", 16), justify=tk.CENTER).grid(
+            row=0, column=0, columnspan=4, sticky=tk.EW)
+
+        ctk.CTkLabel(self.simulateFrame, text="Starting Cash:").grid(
+            row=1, column=0, sticky=tk.W)
+        self.simulateFrame.startCashEntry = ctk.CTkEntry(
+            self.simulateFrame, justify=tk.CENTER)
+        self.simulateFrame.startCashEntry.grid(row=1, column=1, sticky=tk.EW)
+
+        ctk.CTkLabel(self.simulateFrame, text="Start Date:").grid(
+            row=2, column=0, sticky=tk.W)
+        self.simulateFrame.startDateEntry = tkcalendar.DateEntry(
+            self.simulateFrame)
+        self.simulateFrame.startDateEntry.grid(row=2, column=1, sticky=tk.EW)
+
+        ctk.CTkLabel(self.simulateFrame, text="Stop Date:").grid(
+            row=3, column=0, sticky=tk.W)
+        self.simulateFrame.stopDateEntry = tkcalendar.DateEntry(
+            self.simulateFrame)
+        self.simulateFrame.stopDateEntry.grid(row=3, column=1, sticky=tk.EW)
+
+        self.simulateFrame.simulateButton = ctk.CTkButton(
+            self.simulateFrame, text="Start Simulation")
+        self.simulateFrame.simulateButton.grid(
+            row=4, column=0, columnspan=2, sticky=tk.EW)
+
+        self.simulateFrame.grid(
+            row=0, column=1, rowspan=3, sticky=tk.NSEW, padx=5, pady=5)
+
+        for child in self.simulateFrame.winfo_children():
+            child.grid_configure(pady=5, padx=5)
+
+    def initRunFrame(self):
+        self.runFrame = ctk.CTkFrame(self)
+        for x in range(2):
+            self.runFrame.columnconfigure(x, weight=1, uniform="")
+        for y in range(5):
+            self.runFrame.rowconfigure(y, weight=1, uniform="")
+        ctk.CTkLabel(self.runFrame, text="Live Trading", font=("Segoe", 16), justify=tk.CENTER).grid(
+            row=0, column=0, columnspan=4, sticky=tk.EW)
+
+        self.runFrame.toggleButton = ctk.CTkButton(
+            self.runFrame, text="Start Trading")
+        self.runFrame.toggleButton.grid(
+            row=1, column=0, columnspan=2, sticky=tk.EW)
+
+        ctk.CTkLabel(self.runFrame, text="Current Balance:").grid(
+            row=2, column=0, sticky=tk.W)
+        self.runFrame.balanceEntry = ctk.CTkEntry(
+            self.runFrame, justify=tk.CENTER)
+        self.runFrame.balanceEntry.grid(row=2, column=1, sticky=tk.EW)
+
+        ctk.CTkLabel(self.runFrame, text="Current Price:").grid(
+            row=3, column=0, sticky=tk.W)
+        self.runFrame.priceEntry = ctk.CTkEntry(
+            self.runFrame, justify=tk.CENTER)
+        self.runFrame.priceEntry.grid(row=3, column=1, sticky=tk.EW)
+
+        ctk.CTkLabel(self.runFrame, text="Profit:").grid(
+            row=4, column=0, sticky=tk.W)
+        self.runFrame.profitEntry = ctk.CTkEntry(
+            self.runFrame, justify=tk.CENTER)
+        self.runFrame.profitEntry.grid(row=4, column=1, sticky=tk.EW)
+
+        self.runFrame.grid(row=3, column=1, rowspan=3,
+                           sticky=tk.NSEW, padx=5, pady=5)
+
+        for child in self.runFrame.winfo_children():
             child.grid_configure(pady=5, padx=5)
 
     def search(self):
@@ -371,7 +456,28 @@ class App(ctk.CTk):
         except:
             msg.showerror(
                 title="Error", message=f"\"{symb}\" is not a valid symbol")
-            pass
+
+    def findMaxBuy(self):
+        symb = self.queryFrame.symbolEntry.get()
+        try:
+            balance = getBalance("USDT")
+            self.transactFrame.buyEntry.delete(0, tk.END)
+            self.transactFrame.buyEntry.insert(0, balance)
+        except:
+            msg.showerror(
+                title="Error", message=f"\"{symb}\" is not a valid symbol")
+
+    def findMaxSell(self):
+        symb = self.queryFrame.symbolEntry.get()
+        try:
+            price = scrapeRecent(symb)
+            balance = getBalance(symb)
+            amount = price * balance
+            self.transactFrame.sellEntry.delete(0, tk.END)
+            self.transactFrame.sellEntry.insert(0, amount)
+        except:
+            msg.showerror(
+                title="Error", message=f"\"{symb}\" is not a valid symbol")
 
     def time(self):
         self.clockLabel.after(1000, self.time)

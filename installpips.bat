@@ -5,3 +5,4 @@ pip install pywin32
 pip install tqdm
 pip install tkinter
 pip install customtkinter
+pip install tkcalendar
