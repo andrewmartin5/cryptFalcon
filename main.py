@@ -1,4 +1,3 @@
-from itertools import product
 import os
 import datetime
 from queue import Queue
